@@ -2,40 +2,28 @@ import json
 import os
 from datetime import datetime
 
-DATA_FILE = "news_data.json"
+FILE = "news.json"
 
-
-def save_news(data: dict):
+def save_news(data):
     payload = {
         "date": datetime.utcnow().strftime("%Y-%m-%d"),
         "data": data
     }
-    with open(DATA_FILE, "w") as f:
+    with open(FILE, "w") as f:
         json.dump(payload, f)
 
-
 def load_news():
-    if not os.path.exists(DATA_FILE):
+    if not os.path.exists(FILE):
         return {}
-
-    with open(DATA_FILE, "r") as f:
-        payload = json.load(f)
-
-    return payload
-
+    with open(FILE, "r") as f:
+        return json.load(f)
 
 def is_today_data():
-    payload = load_news()
-    if not payload:
+    data = load_news()
+    if not data:
         return False
+    return data.get("date") == datetime.utcnow().strftime("%Y-%m-%d")
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    return payload.get("date") == today
-
-
-def get_news_by_category(category: str):
-    payload = load_news()
-    if not payload:
-        return []
-
-    return payload.get("data", {}).get(category, [])
+def get_news_by_category(cat):
+    data = load_news()
+    return data.get("data", {}).get(cat, [])

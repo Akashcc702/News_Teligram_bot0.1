@@ -2,138 +2,144 @@ import os
 import requests
 from flask import Flask
 from threading import Thread
-import asyncio
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
 from datetime import datetime
 import time
 
-# Flask Keep-Alive Server
+# Flask Keep-Alive (Render-ಗೆ must)
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "🔥 News Telegram Bot Running Successfully!"
+    return "🔥 News Bot Running! ✅"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port)
 
-def keep_alive():
-    Thread(target=run_flask, daemon=True).start()
+# Start Flask in background
+flask_thread = Thread(target=run_flask, daemon=True)
 
 # Config
 TOKEN = os.getenv("BOT_TOKEN")
 NEWS_API = os.getenv("NEWS_API")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# News Function (Thread-Safe)
 def fetch_news(category=None, query=None):
     try:
         if category:
             url = f"https://newsapi.org/v2/top-headlines?country=in&category={category}&apiKey={NEWS_API}"
         elif query:
-            url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&apiKey={NEWS_API}"
+            url = f"https://newsapi.org/v2/everything?q={query}&apiKey={NEWS_API}"
         else:
             url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={NEWS_API}"
 
         r = requests.get(url, timeout=10)
         data = r.json()
-        articles = data.get("articles", [])[:5]
+        articles = data.get("articles", [])
         
         if not articles:
-            return "❌ No news available"
+            return "❌ No news found"
             
-        news = "📰 *Latest News*
+        news = "📰 *TODAY'S NEWS*
 
 "
-        for a in articles:
-            news += f"📢 {a.get('title', 'No title')}
-🔗 {a.get('url', 'No URL')}
+        for i, a in enumerate(articles[:5], 1):
+            news += f"{i}. {a.get('title', 'No title')}
+"
+            news += f"🔗 {a.get('url', 'No URL')}
 
 "
         return news
-    except Exception as e:
-        return f"❌ News fetch error: {str(e)[:50]}"
+    except:
+        return "❌ News service temporarily unavailable"
 
-# Bot Commands (v20 async)
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🔥 *Ultimate News Bot*
+# Bot Commands (v13 syntax - NO ASYNC)
+def start(update, context):
+    update.message.reply_text(
+        "🔥 *ULTIMATE NEWS BOT*
 
 "
-        "Commands:
+        "📱 *Commands:*
 "
-        "/tech
-/sports
-/business
-/crypto
-/india"
+        "/india - India News
+"
+        "/tech - Tech News
+"
+        "/sports - Sports
+"
+        "/business - Business
+"
+        "/crypto - Crypto News"
     )
 
-async def tech(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(fetch_news("technology"))
+def tech(update, context):
+    update.message.reply_text(fetch_news("technology"))
 
-async def sports(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(fetch_news("sports"))
+def sports(update, context):
+    update.message.reply_text(fetch_news("sports"))
 
-async def business(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(fetch_news("business"))
+def business(update, context):
+    update.message.reply_text(fetch_news("business"))
 
-async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(fetch_news(query="bitcoin"))
+def crypto(update, context):
+    update.message.reply_text(fetch_news(query="cryptocurrency"))
 
-async def india(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(fetch_news())
+def india(update, context):
+    update.message.reply_text(fetch_news())
 
-# SIMPLE AUTO NEWS (Thread-based, NO asyncio issues)
-def auto_news_loop(bot):
+# Auto News (Simple Thread - NO asyncio)
+def auto_news(bot):
+    last_sent = {}
     while True:
-        try:
-            now = datetime.now()
-            if now.hour == 8 and now.minute == 0:
-                asyncio.run_coroutine_threadsafe(
-                    bot.send_message(chat_id=CHAT_ID, text="🌅 *Morning News*
+        now = datetime.now()
+        
+        # Morning 8 AM
+        if now.hour == 8 and now.minute == 0 and now.day != last_sent.get('morning', 0):
+            bot.send_message(chat_id=CHAT_ID, text="🌅 *GOOD MORNING! TODAY'S NEWS*
 
-" + fetch_news()),
-                    asyncio.get_event_loop()
-                )
-            if now.hour % 6 == 0 and now.minute == 0:
-                asyncio.run_coroutine_threadsafe(
-                    bot.send_message(chat_id=CHAT_ID, text="⏰ *Auto Update*
+" + fetch_news())
+            last_sent['morning'] = now.day
+            
+        # Every 6 hours
+        if now.hour % 6 == 0 and now.minute == 0:
+            bot.send_message(chat_id=CHAT_ID, text="⏰ *NEWS UPDATE*
 
-" + fetch_news()),
-                    asyncio.get_event_loop()
-                )
-            time.sleep(60)
-        except:
-            time.sleep(60)
+" + fetch_news())
+            
+        time.sleep(60)
 
-# Main Bot Function
-async def main():
-    print("🚀 Starting Telegram Bot...")
-    application = Application.builder().token(TOKEN).build()
-
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("tech", tech))
-    application.add_handler(CommandHandler("sports", sports))
-    application.add_handler(CommandHandler("business", business))
-    application.add_handler(CommandHandler("crypto", crypto))
-    application.add_handler(CommandHandler("india", india))
-
-    # Start auto news in background thread
-    Thread(target=auto_news_loop, args=(application.bot,), daemon=True).start()
+# Main Bot Setup
+def main():
+    print("🚀 Starting News Bot...")
     
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
+    
+    # Add command handlers
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("tech", tech))
+    dp.add_handler(CommandHandler("sports", sports))
+    dp.add_handler(CommandHandler("business", business))
+    dp.add_handler(CommandHandler("crypto", crypto))
+    dp.add_handler(CommandHandler("india", india))
+    
+    # Start bot
+    updater.start_polling(drop_pending_updates=True)
     print("✅ Bot started successfully!")
-    await application.run_polling(drop_pending_updates=True)
+    
+    # Auto news thread
+    Thread(target=auto_news, args=(updater.bot,), daemon=True).start()
+    
+    # Keep running
+    updater.idle()
 
 # RUN EVERYTHING
 if __name__ == "__main__":
-    if not all([TOKEN, NEWS_API, CHAT_ID]):
-        print("❌ Missing environment variables!")
+    if not TOKEN or not NEWS_API or not CHAT_ID:
+        print("❌ ERROR: Missing BOT_TOKEN, NEWS_API, or CHAT_ID")
         exit(1)
     
-    print("Starting Flask + Telegram Bot...")
-    keep_alive()  # Flask server
-    asyncio.run(main())  # Telegram bot
+    print("🎯 Starting Flask + Telegram Bot...")
+    flask_thread.start()  # Flask server
+    main()               # Telegram bot

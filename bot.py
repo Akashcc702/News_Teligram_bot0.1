@@ -2,40 +2,42 @@ import os
 import requests
 from flask import Flask
 from threading import Thread
-from telegram.ext import Updater, CommandHandler
+import asyncio
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 from datetime import datetime
 import time
 
-# ---------------- FLASK WEB SERVER ----------------
+# Flask Web Server
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "🔥 Ultimate News Bot Running!"
+    return "🔥 Ultimate News Bot v2.0 Running!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port)
 
 def keep_alive():
     t = Thread(target=run_flask, daemon=True)
     t.start()
 
-# ---------------- CONFIG ----------------
+# Config
 TOKEN = os.getenv("BOT_TOKEN")
 NEWS_API = os.getenv("NEWS_API")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# ---------------- NEWS FUNCTION ----------------
+# News Function
 def fetch_news(category=None, query=None):
-    if category:
-        url = f"https://newsapi.org/v2/top-headlines?country=in&category={category}&apiKey={NEWS_API}"
-    elif query:
-        url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&apiKey={NEWS_API}"
-    else:
-        url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={NEWS_API}"
-
     try:
+        if category:
+            url = f"https://newsapi.org/v2/top-headlines?country=in&category={category}&apiKey={NEWS_API}"
+        elif query:
+            url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&apiKey={NEWS_API}"
+        else:
+            url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={NEWS_API}"
+
         r = requests.get(url, timeout=10)
         data = r.json()
         articles = data.get("articles", [])[:5]
@@ -52,71 +54,66 @@ def fetch_news(category=None, query=None):
     except:
         return "❌ News fetch failed"
 
-# ---------------- COMMANDS ----------------
-def start(update, context):
-    update.message.reply_text(
+# Command Handlers (v20 syntax)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
         "🔥 *Welcome to Ultimate News Bot*
 
 "
         "*Commands:*
-"
-        "/tech - Technology news
-"
-        "/sports - Sports news
-"
-        "/business - Business news
-"
-        "/crypto - Crypto news
-"
-        "/india - India news"
+/tech
+/sports
+/business
+/crypto
+/india"
     )
 
-def tech(update, context):
-    update.message.reply_text(fetch_news(category="technology"))
+async def tech(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(fetch_news(category="technology"))
 
-def sports(update, context):
-    update.message.reply_text(fetch_news(category="sports"))
+async def sports(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(fetch_news(category="sports"))
 
-def business(update, context):
-    update.message.reply_text(fetch_news(category="business"))
+async def business(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(fetch_news(category="business"))
 
-def crypto(update, context):
-    update.message.reply_text(fetch_news(query="crypto"))
+async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(fetch_news(query="crypto"))
 
-def india(update, context):
-    update.message.reply_text(fetch_news())
+async def india(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(fetch_news())
 
-# ---------------- AUTO NEWS ----------------
-def auto_news(bot):
+# Auto News
+async def auto_news(app):
     while True:
         now = datetime.now()
         if now.hour == 8 and now.minute == 0:
-            bot.send_message(chat_id=CHAT_ID, text="🌅 *Morning News*
+            await app.bot.send_message(chat_id=CHAT_ID, text="🌅 *Morning News*
 
 " + fetch_news())
         if now.hour % 6 == 0 and now.minute == 0:
-            bot.send_message(chat_id=CHAT_ID, text="⏰ *Auto Update*
+            await app.bot.send_message(chat_id=CHAT_ID, text="⏰ *Auto Update*
 
 " + fetch_news())
-        time.sleep(60)
+        await asyncio.sleep(60)
 
-# ---------------- MAIN BOT ----------------
-def start_bot():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+# Main Bot
+async def main():
+    app = Application.builder().token(TOKEN).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("tech", tech))
-    dp.add_handler(CommandHandler("sports", sports))
-    dp.add_handler(CommandHandler("business", business))
-    dp.add_handler(CommandHandler("crypto", crypto))
-    dp.add_handler(CommandHandler("india", india))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("tech", tech))
+    app.add_handler(CommandHandler("sports", sports))
+    app.add_handler(CommandHandler("business", business))
+    app.add_handler(CommandHandler("crypto", crypto))
+    app.add_handler(CommandHandler("india", india))
 
-    Thread(target=auto_news, args=(updater.bot,), daemon=True).start()
-    updater.start_polling()
-    updater.idle()
+    # Auto news task
+    asyncio.create_task(auto_news(app))
+    
+    await app.run_polling()
 
-# ---------------- RUN EVERYTHING ----------------
+# Run Everything
 if __name__ == "__main__":
     keep_alive()
-    start_bot()
+    asyncio.run(main())
